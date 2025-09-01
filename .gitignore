@@ -1,0 +1,14 @@
+# Arquivo .gitignore
+
+# Ignorar o ambiente virtual
+.venv/
+
+# Ignorar o arquivo de senhas!
+.env
+
+# Ignorar arquivos do PyCharm/VSCode
+.idea/
+.vscode/
+
+# Ignorar arquivos temporários do Python
+__pycache__/
