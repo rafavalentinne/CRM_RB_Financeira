@@ -1,0 +1,23 @@
+# Arquivo .gitignore
+
+# Ignorar o ambiente virtual
+.venv/
+
+# Ignorar o arquivo de senhas!
+.env
+
+# Ignorar arquivos do PyCharm/VSCode
+.idea/
+.vscode/
+
+# Ignorar arquivos temporários do Python
+__pycache__/
+
+criar_vendedor.py
+exportar_relatorio.py
+gerenciar_mensagens.py
+importar_excel.py
+relatorio_desempenho.xlsx
+base.xlsx
+testar_conexao.py
+Telegram.py
