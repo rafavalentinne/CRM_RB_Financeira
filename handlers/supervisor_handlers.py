@@ -1,16 +1,17 @@
 # handlers/supervisor_handlers.py
 
 import logging
-from datetime import datetime, time, UTC
+from datetime import datetime, time
 import pytz
-from collections import Counter
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from bson.objectid import ObjectId
 from telegram.helpers import escape_markdown
+from collections import Counter
 
 
 async def gerar_relatorio_equipe(supervisor_id: ObjectId, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Função auxiliar que gera o texto do relatório de uma equipe."""
     vendedores_collection = context.bot_data['vendedores_collection']
     clientes_collection = context.bot_data['clientes_collection']
 
@@ -40,14 +41,14 @@ async def gerar_relatorio_equipe(supervisor_id: ObjectId, context: ContextTypes.
     ]
     resultados = list(clientes_collection.aggregate(pipeline))
 
-    nome_supervisor_escapado = escape_markdown(supervisor['nome_vendedor'], version=2)
+    nome_supervisor_html = supervisor['nome_vendedor']
     if not resultados:
-        return f"A equipe de *{nome_supervisor_escapado}* não finalizou clientes hoje."
+        return f"A equipe de <b>{nome_supervisor_html}</b> não finalizou clientes hoje."
 
     nomes_vendedores = {str(v['_id']): v['nome_vendedor'] for v in vendedores_da_equipe}
     nomes_vendedores[str(supervisor_id)] = supervisor['nome_vendedor']
 
-    relatorio = f"📊 *Desempenho da Equipe de {nome_supervisor_escapado} \\- {hoje.strftime('%d/%m/%Y')}*\n\n"
+    relatorio = f"📊 <b>Desempenho da Equipe de {nome_supervisor_html} - {hoje.strftime('%d/%m/%Y')}</b>\n\n"
     total_geral = 0
     for res in resultados:
         vendedor_id_str = str(res['_id'])
@@ -56,19 +57,17 @@ async def gerar_relatorio_equipe(supervisor_id: ObjectId, context: ContextTypes.
         total_geral += total_finalizados
 
         counts = Counter(res['status_counts'])
-        detalhes = ", ".join(
-            [f"{escape_markdown(status, version=2)}: {count}" for status, count in sorted(counts.items())])
+        detalhes = ", ".join([f"{status}: {count}" for status, count in sorted(counts.items())])
 
-        nome_escapado = escape_markdown(nome, version=2)
+        relatorio += f"👤 <b>{nome}</b>: {total_finalizados} finalizados\n"
+        relatorio += f"   - {detalhes}\n"
 
-        relatorio += f"👤 *{nome_escapado}*: {total_finalizados} finalizados\n"
-        relatorio += f"   ┕ {detalhes}\n"
-
-    relatorio += f"\n*Total da Equipe:* {total_geral} clientes"
+    relatorio += f"\n<b>Total da Equipe:</b> {total_geral} clientes"
     return relatorio
 
 
 async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Exibe o painel de supervisor."""
     role = context.user_data.get('vendedor_logado', {}).get('role')
     if role not in ['supervisor', 'administrador']:
         await update.message.reply_text("Comando não reconhecido.")
@@ -76,14 +75,18 @@ async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     keyboard = [[InlineKeyboardButton("📊 Desempenho da Equipe (Hoje)", callback_data="sup_desempenho_hoje")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    message_text = "🔰 *Painel de Supervisor*\n\nSelecione uma opção:"
+
+    message_text = "🔰 <b>Painel de Supervisor</b>\n\nSelecione uma opção:"
+
     if update.callback_query:
-        await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='HTML')
     else:
-        await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+        await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='HTML')
 
 
 async def desempenho_equipe_hoje(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Chama a função auxiliar e exibe o relatório da equipe do supervisor logado."""
     query = update.callback_query
     await query.answer()
 
@@ -93,8 +96,9 @@ async def desempenho_equipe_hoje(update: Update, context: ContextTypes.DEFAULT_T
     keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel Supervisor", callback_data="sup_back_to_main")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(relatorio, reply_markup=reply_markup, parse_mode='MarkdownV2')
+    await query.edit_message_text(relatorio, reply_markup=reply_markup, parse_mode='HTML')
 
 
 async def supervisor_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Função para o botão 'Voltar' do painel de supervisor."""
     await supervisor_panel(update, context)

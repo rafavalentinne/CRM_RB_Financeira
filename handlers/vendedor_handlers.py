@@ -1,5 +1,3 @@
-# handlers/vendedor_handlers.py
-
 import re
 import logging
 from datetime import datetime, time, UTC
@@ -79,7 +77,7 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def buscar_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
-        "Você не está logado. Envie <code>/login</code> para começar."); return ConversationHandler.END
+        "Você não está logado. Envie <code>/login</code> para começar."); return ConversationHandler.END
     await update.message.reply_text("Digite o número de telefone do cliente que deseja buscar:");
     return GET_PHONE
 
@@ -185,21 +183,14 @@ async def finalize_consulta(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not cliente_id or not banco or not resultado: await source.message.reply_text(
         "Ocorreu um erro de sessão. Por favor, inicie o processo novamente."); return ConversationHandler.END
     clientes_collection = context.bot_data['clientes_collection']
-
-    # --- CORREÇÃO PRINCIPAL AQUI ---
     status_final_texto = f"Consulta: {resultado}"
-
     update_doc = {
-        "$set": {
-            "status": "Concluido", "status_final": status_final_texto,
-            "banco_consulta": banco, "resultado_consulta": resultado,
-            "data_finalizacao": datetime.now(UTC)
-        },
-        "$push": {"observacoes": {
-            "nota": f"Consulta no banco {banco} com resultado: {resultado}",
-            "vendedor_nome": context.user_data.get('vendedor_logado', {}).get('nome', 'Desconhecido'),
-            "data": datetime.now(UTC)
-        }}
+        "$set": {"status": "Concluido", "status_final": status_final_texto, "banco_consulta": banco,
+                 "resultado_consulta": resultado, "data_finalizacao": datetime.now(UTC)},
+        "$push": {"observacoes": {"nota": f"Consulta no banco {banco} com resultado: {resultado}",
+                                  "vendedor_nome": context.user_data.get('vendedor_logado', {}).get('nome',
+                                                                                                    'Desconhecido'),
+                                  "data": datetime.now(UTC)}}
     }
     if saldo is not None: update_doc["$set"]["saldo_consulta"] = saldo; update_doc["$push"]["observacoes"][
         "nota"] += f" | Saldo: {saldo:.2f}"
@@ -271,7 +262,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def clientes_hoje(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
-        "Você не está logado. Envie <code>/login</code> para começar."); return
+        "Você não está logado. Envie <code>/login</code> para começar."); return
     vendedor_id = context.user_data['vendedor_logado']['id'];
     clientes_collection = context.bot_data['clientes_collection'];
     tz = pytz.timezone('America/Sao_Paulo');
@@ -316,7 +307,7 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def proximo_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
-        "Você не está logado. Envie <code>/login</code> para começar."); return
+        "Você não está logado. Envie <code>/login</code> para começar."); return
     vendedor_id = context.user_data['vendedor_logado']['id'];
     clientes_collection = context.bot_data['clientes_collection']
     cliente_ativo = clientes_collection.find_one({"vendedor_atribuido": vendedor_id, "status": "Em_Atendimento"})
@@ -380,7 +371,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def filtrar_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
-        "Você не está logado. Envie <code>/login</code> para começar."); return
+        "Você não está logado. Envie <code>/login</code> para começar."); return
     filtro_keyboard = [[InlineKeyboardButton("✅ Com Saldo", callback_data="filtro_com_saldo")],
                        [InlineKeyboardButton("Não Autorizado", callback_data="filtro_Nao Autorizado")],
                        [InlineKeyboardButton("Sem Saldo", callback_data="filtro_Sem Saldo")],

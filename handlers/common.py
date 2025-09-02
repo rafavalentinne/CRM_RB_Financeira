@@ -1,4 +1,3 @@
-# handlers/common.py
 import re
 import os
 import random
@@ -28,7 +27,6 @@ STATUS_MAP = {
 
 
 def is_admin(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Verifica se o usuário logado tem a função 'administrador'."""
     if 'vendedor_logado' in context.user_data:
         role = context.user_data['vendedor_logado'].get('role')
         if role == 'administrador':
@@ -38,7 +36,6 @@ def is_admin(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 async def _enviar_info_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE, cliente: dict,
                                texto_introducao: str):
-    """Função centralizada para enviar os detalhes de um cliente e os botões de ação."""
     telefone_bruto = cliente['telefone'];
     numero_limpo = re.sub(r'\D', '', str(telefone_bruto));
     whatsapp_url = f"https://wa.me/55{numero_limpo}"
@@ -79,7 +76,6 @@ async def _enviar_info_cliente(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Função genérica para cancelar qualquer conversa."""
     from handlers.admin_handlers import admin_panel
     query = update.callback_query
     if query:
