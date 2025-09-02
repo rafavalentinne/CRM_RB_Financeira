@@ -16,39 +16,54 @@ from .common import _enviar_info_cliente, STATUS_MAP, USERNAME, PASSWORD, GET_PH
     GET_NOTE, GET_BALANCE_AMOUNT
 
 
-# ... (todas as outras funções, como start, login, buscar, etc., permanecem as mesmas)
+async def login_unexpected_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(
+        "Processo de login em andamento. Por favor, envie seu nome de usuário ou use /cancel.")
+    return USERNAME
+
+
+async def password_unexpected_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Processo de login em andamento. Por favor, envie sua senha ou use /cancel.")
+    return PASSWORD
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user;
+    user = update.effective_user
     await update.message.reply_html(
         f"Olá {user.mention_html()}! Bem-vindo ao Bot de Vendas.\n\nUse o comando /login para entrar no sistema.")
 
 
 async def login_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Olá! Por favor, digite seu nome de usuário de login:");
+    await update.message.reply_text("Olá! Por favor, digite seu nome de usuário de login:")
     return USERNAME
 
 
 async def get_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['login_username'] = update.message.text.lower();
-    await update.message.reply_text("Obrigado. Agora, por favor, digite sua senha:");
+    context.user_data['login_username'] = update.message.text.lower()
+    await update.message.reply_text("Obrigado. Agora, por favor, digite sua senha:")
     return PASSWORD
 
 
 async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    login_username = context.user_data.get('login_username');
-    password = update.message.text;
+    login_username = context.user_data.get('login_username')
+    password = update.message.text
     user = update.effective_user
-    if not login_username: await update.message.reply_text(
-        "Ocorreu um erro. Por favor, inicie o login novamente com /login."); return ConversationHandler.END
-    vendedores_collection = context.bot_data['vendedores_collection'];
+    if not login_username:
+        await update.message.reply_text("Ocorreu um erro. Por favor, inicie o login novamente com /login.")
+        return ConversationHandler.END
+
+    vendedores_collection = context.bot_data['vendedores_collection']
     vendedor = vendedores_collection.find_one({"usuario_login": login_username})
+
     if vendedor and check_password_hash(vendedor['senha_hash'], password):
         context.user_data['vendedor_logado'] = {"id": vendedor['_id'], "nome": vendedor['nome_vendedor'],
                                                 "role": vendedor.get('role', 'vendedor')}
         vendedores_collection.update_one({"_id": vendedor['_id']}, {"$set": {"usuario_telegram": user.id}})
         role = context.user_data['vendedor_logado']['role']
-        main_keyboard = [[KeyboardButton("/proximo"), KeyboardButton("/meucliente")],
-                         [KeyboardButton("/hoje"), KeyboardButton("/buscar"), KeyboardButton("/filtrar")], ]
+        main_keyboard = [
+            [KeyboardButton("/proximo"), KeyboardButton("/meucliente")],
+            [KeyboardButton("/hoje"), KeyboardButton("/buscar"), KeyboardButton("/filtrar")],
+        ]
         if role in ['supervisor', 'administrador']: main_keyboard.append(
             [KeyboardButton("/supervisor"), KeyboardButton("/admin")])
         main_keyboard.append([KeyboardButton("/logout")])
@@ -58,13 +73,13 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             reply_markup=reply_markup)
         return ConversationHandler.END
     else:
-        await update.message.reply_text(
-            "Usuário ou senha incorretos. Tente novamente com /login."); return ConversationHandler.END
+        await update.message.reply_text("Usuário ou senha incorretos. Tente novamente com /login.")
+        return ConversationHandler.END
 
 
 async def buscar_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if 'vendedor_logado' not in context.user_data: await update.message.reply_text(
-        "Você precisa estar logado para buscar um cliente. Use /login."); return ConversationHandler.END
+    if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
+        "Você не está logado. Envie <code>/login</code> para começar."); return ConversationHandler.END
     await update.message.reply_text("Digite o número de telefone do cliente que deseja buscar:");
     return GET_PHONE
 
@@ -170,11 +185,22 @@ async def finalize_consulta(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not cliente_id or not banco or not resultado: await source.message.reply_text(
         "Ocorreu um erro de sessão. Por favor, inicie o processo novamente."); return ConversationHandler.END
     clientes_collection = context.bot_data['clientes_collection']
-    update_doc = {"$set": {"status": "Concluido", "status_final": "Consulta Realizada", "banco_consulta": banco,
-                           "resultado_consulta": resultado, "data_finalizacao": datetime.now(UTC)}, "$push": {
-        "observacoes": {"nota": f"Consulta no banco {banco} com resultado: {resultado}",
-                        "vendedor_nome": context.user_data.get('vendedor_logado', {}).get('nome', 'Desconhecido'),
-                        "data": datetime.now(UTC)}}}
+
+    # --- CORREÇÃO PRINCIPAL AQUI ---
+    status_final_texto = f"Consulta: {resultado}"
+
+    update_doc = {
+        "$set": {
+            "status": "Concluido", "status_final": status_final_texto,
+            "banco_consulta": banco, "resultado_consulta": resultado,
+            "data_finalizacao": datetime.now(UTC)
+        },
+        "$push": {"observacoes": {
+            "nota": f"Consulta no banco {banco} com resultado: {resultado}",
+            "vendedor_nome": context.user_data.get('vendedor_logado', {}).get('nome', 'Desconhecido'),
+            "data": datetime.now(UTC)
+        }}
+    }
     if saldo is not None: update_doc["$set"]["saldo_consulta"] = saldo; update_doc["$push"]["observacoes"][
         "nota"] += f" | Saldo: {saldo:.2f}"
     clientes_collection.update_one({"_id": ObjectId(cliente_id)}, update_doc)
@@ -244,7 +270,8 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def clientes_hoje(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if 'vendedor_logado' not in context.user_data: await update.message.reply_text("Você não está logado."); return
+    if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
+        "Você не está logado. Envie <code>/login</code> para começar."); return
     vendedor_id = context.user_data['vendedor_logado']['id'];
     clientes_collection = context.bot_data['clientes_collection'];
     tz = pytz.timezone('America/Sao_Paulo');
@@ -287,150 +314,103 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                     reply_markup=ReplyKeyboardRemove())
 
 
-# --- FUNÇÃO /PROXIMO ATUALIZADA com lógica de distribuição aleatória ---
 async def proximo_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if 'vendedor_logado' not in context.user_data:
-        await update.message.reply_text("Você não está logado.")
-        return
-
-    vendedor_id = context.user_data['vendedor_logado']['id']
+    if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
+        "Você не está logado. Envie <code>/login</code> para começar."); return
+    vendedor_id = context.user_data['vendedor_logado']['id'];
     clientes_collection = context.bot_data['clientes_collection']
-
-    # Verifica se o vendedor já tem um cliente ativo
     cliente_ativo = clientes_collection.find_one({"vendedor_atribuido": vendedor_id, "status": "Em_Atendimento"})
-    if cliente_ativo:
-        texto_intro = "Você já tem um cliente em atendimento."
-        await _enviar_info_cliente(update, context, cliente_ativo, texto_intro)
-        return
-
-    # Tenta pegar um cliente aleatório e travá-lo. Tenta até 3 vezes em caso de colisão.
+    if cliente_ativo: context.user_data['cliente_atual_id'] = cliente_ativo[
+        '_id']; texto_intro = "Você já tem um cliente em atendimento."; await _enviar_info_cliente(update, context,
+                                                                                                   cliente_ativo,
+                                                                                                   texto_intro); return
     for _ in range(3):
-        # 1. Seleciona um cliente pendente aleatoriamente
         pipeline = [{"$match": {"status": "Pendente"}}, {"$sample": {"size": 1}}]
         random_clients = list(clientes_collection.aggregate(pipeline))
-
-        if not random_clients:
-            await update.message.reply_text("Parabéns! Não há mais clientes pendentes na fila.")
-            return
-
+        if not random_clients: await update.message.reply_text(
+            "Parabéns! Não há mais clientes pendentes na fila."); return
         cliente_candidato = random_clients[0]
-
-        # 2. Tenta "travar" esse cliente específico de forma atômica
         cliente_novo = clientes_collection.find_one_and_update(
-            {"_id": cliente_candidato['_id'], "status": "Pendente"},  # Garante que ninguém pegou nesse meio tempo
-            {"$set": {
-                "status": "Em_Atendimento",
-                "vendedor_atribuido": vendedor_id,
-                "data_atribuicao": datetime.now(UTC)
-            }},
-            return_document=ReturnDocument.AFTER
-        )
-
-        # Se a operação teve sucesso, o cliente é nosso!
+            {"_id": cliente_candidato['_id'], "status": "Pendente"},
+            {"$set": {"status": "Em_Atendimento", "vendedor_atribuido": vendedor_id,
+                      "data_atribuicao": datetime.now(UTC)}}, return_document=ReturnDocument.AFTER)
         if cliente_novo:
-            context.user_data['cliente_atual_id'] = cliente_novo['_id']
-            texto_intro = "<b>Novo Cliente Atribuído!</b>"
-            await _enviar_info_cliente(update, context, cliente_novo, texto_intro)
-            return  # Sai da função com sucesso
-
-    # Se o loop terminar sem sucesso (3 colisões seguidas, muito raro)
+            context.user_data['cliente_atual_id'] = cliente_novo['_id'];
+            texto_intro = "<b>Novo Cliente Atribuído!</b>";
+            await _enviar_info_cliente(update, context, cliente_novo, texto_intro);
+            return
     await update.message.reply_text("A fila está muito concorrida! Tente novamente em alguns segundos.")
 
 
 async def meu_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if 'vendedor_logado' not in context.user_data:
-        await update.message.reply_text("Você não está logado.")
-        return
-
-    vendedor_id = context.user_data['vendedor_logado']['id']
+    if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
+        "Você não está logado. Envie <code>/login</code> para começar."); return
+    vendedor_id = context.user_data['vendedor_logado']['id'];
     clientes_collection = context.bot_data['clientes_collection']
     cliente_ativo = clientes_collection.find_one({"vendedor_atribuido": vendedor_id, "status": "Em_Atendimento"})
-
     if cliente_ativo:
-        context.user_data['cliente_atual_id'] = cliente_ativo['_id']
-        texto_intro = "Este é o seu cliente atual:"
+        context.user_data['cliente_atual_id'] = cliente_ativo['_id'];
+        texto_intro = "Este é o seu cliente atual:";
         await _enviar_info_cliente(update, context, cliente_ativo, texto_intro)
     else:
         await update.message.reply_text("Você não tem nenhum cliente em atendimento no momento. Use /proximo.")
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
+    query = update.callback_query;
     await query.answer()
-
     if 'vendedor_logado' not in context.user_data or 'cliente_atual_id' not in context.user_data:
-        await query.edit_message_text(text="Ocorreu um erro de sessão. Use /proximo ou /buscar novamente.")
+        await query.edit_message_text(text="Ocorreu um erro de sessão. Use /proximo ou /buscar novamente.");
         return
-
-    cliente_id = context.user_data['cliente_atual_id']
-    callback_status = query.data
-    status_final_texto = STATUS_MAP.get(callback_status, "Status Desconhecido")
+    cliente_id = context.user_data['cliente_atual_id'];
+    callback_status = query.data;
+    status_final_texto = STATUS_MAP.get(callback_status, "Status Desconhecido");
     clientes_collection = context.bot_data['clientes_collection']
-
     try:
-        clientes_collection.update_one(
-            {"_id": ObjectId(cliente_id)},
-            {"$set": {"status": "Concluido", "status_final": status_final_texto, "data_finalizacao": datetime.now(UTC)}}
-        )
+        clientes_collection.update_one({"_id": ObjectId(cliente_id)}, {
+            "$set": {"status": "Concluido", "status_final": status_final_texto, "data_finalizacao": datetime.now(UTC)}})
         del context.user_data['cliente_atual_id']
         texto_confirmacao = (
-            f"Cliente finalizado com sucesso!\n<b>Status Final:</b> {status_final_texto}\n\n"
-            f"Ótimo trabalho! Use /proximo para pegar um novo cliente."
-        )
+            f"Cliente finalizado com sucesso!\n<b>Status Final:</b> {status_final_texto}\n\nÓtimo trabalho! Use /proximo para pegar um novo cliente.")
         await query.edit_message_text(text=texto_confirmacao, parse_mode='HTML')
     except Exception as e:
-        logging.error(f"Erro ao atualizar cliente: {e}")
-        await query.edit_message_text(text="Ocorreu um erro ao atualizar o status.")
+        logging.error(f"Erro ao atualizar cliente: {e}"); await query.edit_message_text(
+            text="Ocorreu um erro ao atualizar o status.")
 
 
 async def filtrar_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if 'vendedor_logado' not in context.user_data:
-        await update.message.reply_text("Você precisa estar logado para filtrar clientes. Use /login.")
-        return
-
-    filtro_keyboard = [
-        [InlineKeyboardButton("✅ Com Saldo", callback_data="filtro_com_saldo")],
-        [InlineKeyboardButton("Não Autorizado", callback_data="filtro_Nao Autorizado")],
-        [InlineKeyboardButton("Sem Saldo", callback_data="filtro_Sem Saldo")],
-        [InlineKeyboardButton("Não Elegível", callback_data="filtro_Nao Elegivel")]
-    ]
-    reply_markup = InlineKeyboardMarkup(filtro_keyboard)
+    if 'vendedor_logado' not in context.user_data: await update.message.reply_html(
+        "Você не está logado. Envie <code>/login</code> para começar."); return
+    filtro_keyboard = [[InlineKeyboardButton("✅ Com Saldo", callback_data="filtro_com_saldo")],
+                       [InlineKeyboardButton("Não Autorizado", callback_data="filtro_Nao Autorizado")],
+                       [InlineKeyboardButton("Sem Saldo", callback_data="filtro_Sem Saldo")],
+                       [InlineKeyboardButton("Não Elegível", callback_data="filtro_Nao Elegivel")]]
+    reply_markup = InlineKeyboardMarkup(filtro_keyboard);
     await update.message.reply_text("Selecione um filtro para listar os clientes:", reply_markup=reply_markup)
 
 
 async def listar_clientes_filtrados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
+    query = update.callback_query;
     await query.answer()
-    if 'vendedor_logado' not in context.user_data:
-        await query.edit_message_text("Sessão expirada. Por favor, faça login novamente com /login.")
-        return
-
-    vendedor_id = context.user_data['vendedor_logado']['id']
-    filtro_selecionado = query.data.split('_', 1)[1]
+    if 'vendedor_logado' not in context.user_data: await query.edit_message_text(
+        "Sessão expirada. Por favor, faça login novamente com /login."); return
+    vendedor_id = context.user_data['vendedor_logado']['id'];
+    filtro_selecionado = query.data.split('_', 1)[1];
     clientes_collection = context.bot_data['clientes_collection']
-
-    db_query = {"vendedor_atribuido": vendedor_id}
+    db_query = {"vendedor_atribuido": vendedor_id};
     titulo = ""
     if filtro_selecionado == "com_saldo":
-        db_query["saldo_consulta"] = {"$gt": 0}
-        titulo = "Clientes com Saldo Disponível"
+        db_query["saldo_consulta"] = {"$gt": 0}; titulo = "Clientes com Saldo Disponível"
     else:
-        db_query["resultado_consulta"] = filtro_selecionado
-        titulo = f"Clientes com status '{filtro_selecionado}'"
-
+        db_query["resultado_consulta"] = filtro_selecionado; titulo = f"Clientes com status '{filtro_selecionado}'"
     clientes_encontrados = list(clientes_collection.find(db_query))
-
-    if not clientes_encontrados:
-        await query.edit_message_text(f"Nenhum cliente encontrado para o filtro selecionado.")
-        return
-
+    if not clientes_encontrados: await query.edit_message_text(
+        f"Nenhum cliente encontrado para o filtro selecionado."); return
     keyboard = []
     for cliente in clientes_encontrados:
         texto_botao = f"{cliente['nome_cliente']}"
-        if 'saldo_consulta' in cliente:
-            texto_botao += f" (R$ {cliente.get('saldo_consulta', 0):.2f})"
+        if 'saldo_consulta' in cliente: texto_botao += f" (R$ {cliente.get('saldo_consulta', 0):.2f})"
         keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"view_client_{cliente['_id']}")])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard);
     await query.edit_message_text(f"<b>{titulo}:</b>\nSelecione um para ver os detalhes.", reply_markup=reply_markup,
                                   parse_mode='HTML')

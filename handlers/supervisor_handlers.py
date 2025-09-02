@@ -1,8 +1,9 @@
 # handlers/supervisor_handlers.py
 
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, UTC
 import pytz
+from collections import Counter
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from bson.objectid import ObjectId
@@ -54,22 +55,20 @@ async def gerar_relatorio_equipe(supervisor_id: ObjectId, context: ContextTypes.
         total_finalizados = res['total_finalizados']
         total_geral += total_finalizados
 
-        consultas = res['status_counts'].count('Consulta Realizada')
-        vendas = res['status_counts'].count('💰 Venda Fechada')
-        sem_interesse = res['status_counts'].count('❌ Sem Interesse')
-        contatados = res['status_counts'].count('✅ Contatado')
+        counts = Counter(res['status_counts'])
+        detalhes = ", ".join(
+            [f"{escape_markdown(status, version=2)}: {count}" for status, count in sorted(counts.items())])
 
         nome_escapado = escape_markdown(nome, version=2)
 
         relatorio += f"👤 *{nome_escapado}*: {total_finalizados} finalizados\n"
-        relatorio += f"   ┕ Vendas: {vendas}, Consultas: {consultas}, Sem Interesse: {sem_interesse}, Contatados: {contatados}\n"
+        relatorio += f"   ┕ {detalhes}\n"
 
     relatorio += f"\n*Total da Equipe:* {total_geral} clientes"
     return relatorio
 
 
 async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Exibe o painel de supervisor."""
     role = context.user_data.get('vendedor_logado', {}).get('role')
     if role not in ['supervisor', 'administrador']:
         await update.message.reply_text("Comando não reconhecido.")
@@ -77,9 +76,7 @@ async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     keyboard = [[InlineKeyboardButton("📊 Desempenho da Equipe (Hoje)", callback_data="sup_desempenho_hoje")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     message_text = "🔰 *Painel de Supervisor*\n\nSelecione uma opção:"
-
     if update.callback_query:
         await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup, parse_mode='MarkdownV2')
     else:
@@ -87,7 +84,6 @@ async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def desempenho_equipe_hoje(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Chama a função auxiliar e exibe o relatório da equipe do supervisor logado."""
     query = update.callback_query
     await query.answer()
 
@@ -101,5 +97,4 @@ async def desempenho_equipe_hoje(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def supervisor_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Função para o botão 'Voltar' do painel de supervisor."""
     await supervisor_panel(update, context)
