@@ -1,4 +1,4 @@
-# bot.py (versão refatorada)
+# bot.py (versão corrigida e padronizada)
 
 import os
 import logging
@@ -13,34 +13,11 @@ from telegram.ext import (
     filters,
 )
 
-from handlers.common import (
-    cancel,
-    USERNAME, PASSWORD, GET_PHONE, SELECT_BANK, SELECT_RESULT, GET_NOTE,
-    GET_NEW_USER_NAME, GET_NEW_USER_LOGIN, GET_NEW_USER_PASS,
-    GET_NEW_USER_ROLE, GET_NEW_USER_SUPERVISOR,
-    GET_MSG_NAME, GET_MSG_TEXT,
-    GET_BALANCE_AMOUNT,
-    SELECT_USER_TO_EDIT, CHOOSE_EDIT_ACTION, EDIT_USER_ROLE, EDIT_USER_SUPERVISOR
-)
-from handlers.vendedor_handlers import (
-    start, login_start, get_username, get_password, buscar_start, buscar_telefone,
-    proximo_cliente, meu_cliente, button_callback, clientes_hoje, view_client_details,
-    filtrar_start, listar_clientes_filtrados, logout, start_consulta, select_bank,
-    select_result, add_note_start, get_note_text, show_history,
-    get_balance_amount, finalize_consulta,
-    login_unexpected_command, password_unexpected_command
-)
-from handlers.supervisor_handlers import supervisor_panel, desempenho_equipe_hoje, supervisor_back_to_main
-from handlers.admin_handlers import (
-    admin_panel, admin_manage_users, admin_add_user_start, get_new_user_name,
-    get_new_user_login, get_new_user_password, get_new_user_role,
-    get_new_user_supervisor, finalize_user_creation, admin_stats_menu,
-    admin_stats_geral, admin_select_supervisor, admin_show_supervisor_stats,
-    admin_show_autonomos_stats, admin_back_to_menu, admin_manage_messages,
-    admin_list_messages, admin_add_message_start, get_msg_name, get_msg_text,
-    admin_edit_user_start, select_user_to_edit, prompt_change_role, update_user_role,
-    prompt_change_supervisor, update_user_supervisor, admin_edit_user_end
-)
+from handlers.common import *
+from handlers.vendedor_handlers import *
+from handlers.supervisor_handlers import *
+from handlers.admin_handlers import *
+from handlers.relatorios_handlers import *
 
 
 def main() -> None:
@@ -53,15 +30,20 @@ def main() -> None:
     try:
         client = pymongo.MongoClient(MONGO_URI)
         db = client['bot_vendas']
+
         application.bot_data['vendedores_collection'] = db['vendedores']
         application.bot_data['clientes_collection'] = db['clientes']
         application.bot_data['mensagens_collection'] = db['mensagens']
+        application.bot_data['bases'] = db['bases']
+
         print("Conectado ao MongoDB para o bot.")
     except Exception as e:
-        print(f"Erro ao conectar ao MongoDB para o bot: {e}")
+        print(f"Erro ao conectar ao MongoDB: {e}")
         return
 
-    # Handlers de Conversa
+    # -------------------------------
+    # Conversações
+    # -------------------------------
     login_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("login", login_start)],
         states={
@@ -95,7 +77,7 @@ def main() -> None:
 
     add_note_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(add_note_start, pattern="^add_note_")],
-        states={GET_NOTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_note_text)], },
+        states={GET_NOTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_note_text)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
@@ -139,7 +121,9 @@ def main() -> None:
         per_message=False,
     )
 
-    # Registro de todos os Handlers
+    # -------------------------------
+    # Registro de Handlers
+    # -------------------------------
     application.add_handler(CommandHandler("start", start))
     application.add_handler(login_conv_handler)
     application.add_handler(search_conv_handler)
@@ -155,8 +139,11 @@ def main() -> None:
     application.add_handler(CommandHandler("supervisor", supervisor_panel))
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("logout", logout))
+    application.add_handler(CommandHandler("relatorios", relatorios_panel_inicial))
 
+    # -------------------------------
     # Callbacks
+    # -------------------------------
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^status_"))
     application.add_handler(CallbackQueryHandler(view_client_details, pattern="^view_client_"))
     application.add_handler(CallbackQueryHandler(listar_clientes_filtrados, pattern="^filtro_"))
@@ -172,6 +159,16 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(admin_select_supervisor, pattern="^admin_select_supervisor$"))
     application.add_handler(CallbackQueryHandler(admin_show_supervisor_stats, pattern="^admin_sup_stats_"))
     application.add_handler(CallbackQueryHandler(admin_show_autonomos_stats, pattern="^admin_stats_autonomos$"))
+    application.add_handler(CallbackQueryHandler(admin_toggle_base_status, pattern="^admin_toggle_base_"))
+    application.add_handler(CallbackQueryHandler(admin_manage_bases, pattern="^admin_manage_bases$"))
+    application.add_handler(CallbackQueryHandler(relatorios_panel_inicial, pattern="^relatorio_voltar_inicial$"))
+    application.add_handler(CallbackQueryHandler(selecionar_periodo_para_relatorio, pattern="^relatorio_geral$"))
+    application.add_handler(CallbackQueryHandler(selecionar_periodo_para_relatorio, pattern="^relatorio_totais$"))
+    application.add_handler(CallbackQueryHandler(selecionar_supervisor_para_relatorio, pattern="^relatorio_por_supervisor$"))
+    application.add_handler(CallbackQueryHandler(gerar_relatorio_geral, pattern="^gerar_relatorio_geral_"))
+    application.add_handler(CallbackQueryHandler(gerar_relatorio_de_totais, pattern="^gerar_relatorio_totais_"))
+    application.add_handler(CallbackQueryHandler(selecionar_periodo_para_supervisor, pattern="^selecionar_periodo_sup_"))
+    application.add_handler(CallbackQueryHandler(gerar_relatorio_de_supervisor, pattern="^gerar_relatorio_sup_"))
 
     print("Bot iniciado. Pressione Ctrl+C para parar.")
     application.run_polling()
