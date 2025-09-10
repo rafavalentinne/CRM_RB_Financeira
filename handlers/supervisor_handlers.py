@@ -1,6 +1,6 @@
 # handlers/supervisor_handlers.py
-
 import logging
+from telegram.error import BadRequest
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from handlers.relatorios_handlers import gerar_relatorio_equipe
@@ -22,18 +22,23 @@ async def supervisor_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     else:
         await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='HTML')
 
-
 async def desempenho_equipe_hoje(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
-    supervisor_id = context.user_data['vendedor_logado']['_id']
+    supervisor_id = context.user_data['vendedor_logado']['id']  # ObjectId do supervisor
     relatorio = await gerar_relatorio_equipe(supervisor_id, context, "hoje")
 
     keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Painel Supervisor", callback_data="sup_back_to_main")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(relatorio, reply_markup=reply_markup, parse_mode='MarkdownV2')
+    try:
+        await query.edit_message_text(relatorio, reply_markup=reply_markup, parse_mode='HTML')
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            await query.edit_message_text(relatorio + "\u2060", reply_markup=reply_markup, parse_mode='HTML')
+        else:
+            raise
 
 
 async def supervisor_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

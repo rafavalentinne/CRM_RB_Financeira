@@ -3,14 +3,14 @@
 import logging
 from datetime import datetime, timedelta, time
 from collections import Counter
-from telegram.error import BadRequest
+from bson.objectid import ObjectId
 import pytz
 from bson.objectid import ObjectId, InvalidId
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 from telegram.error import BadRequest
-
+from bson.objectid import ObjectId
 
 def get_date_ranges():
     tz = pytz.timezone('America/Sao_Paulo')
@@ -88,13 +88,24 @@ def _extract_period_from_callback(data: str) -> str:
 async def relatorios_panel_inicial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_role = context.user_data.get('vendedor_logado', {}).get('role')
     if user_role not in ['supervisor', 'administrador']:
-        await update.message.reply_text("Comando não reconhecido.")
+        # Caso alguém sem permissão chame /relatorios
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text("Comando não reconhecido.")
+        else:
+            await update.message.reply_text("Comando não reconhecido.")
         return
 
-    keyboard = [[InlineKeyboardButton("📈 Relatório de Totais (por Status)", callback_data="relatorio_totais")]]
+    keyboard = []
+
     if user_role == 'administrador':
-        keyboard.insert(0, [InlineKeyboardButton("📊 Relatório Geral (por Vendedor)", callback_data="relatorio_geral")])
+        keyboard.append([InlineKeyboardButton("📊 Relatório Geral (por Vendedor)", callback_data="relatorio_geral")])
+        keyboard.append([InlineKeyboardButton("📈 Relatório de Totais (por Status)", callback_data="relatorio_totais")])
         keyboard.append([InlineKeyboardButton("👥 Relatório por Supervisor", callback_data="relatorio_por_supervisor")])
+    else:
+        # Supervisor: mostra o "Geral" filtrado pela própria equipe + Totais
+        keyboard.append([InlineKeyboardButton("📊 Relatório da Minha Equipe (por Vendedor)", callback_data="relatorio_geral")])
+        keyboard.append([InlineKeyboardButton("📈 Relatório de Totais (por Status)", callback_data="relatorio_totais")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_text = "Selecione o tipo de relatório que deseja gerar:"
@@ -126,6 +137,7 @@ async def selecionar_periodo_para_relatorio(update: Update, context: ContextType
 
 from telegram.error import BadRequest  # garanta que este import exista no topo do arquivo
 
+
 async def gerar_relatorio_geral(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -144,10 +156,50 @@ async def gerar_relatorio_geral(update: Update, context: ContextTypes.DEFAULT_TY
     clientes_collection = context.bot_data['clientes_collection']
     vendedores_collection = context.bot_data['vendedores_collection']
 
-    # Map _id -> nome
-    todos_vendedores = list(vendedores_collection.find({}, {"_id": 1, "nome_vendedor": 1}))
+    # --- Novo: se for supervisor, restringe aos vendedores da própria equipe (aceitando 'id' ou '_id')
+    user_ctx = context.user_data.get('vendedor_logado', {}) or {}
+    user_role = user_ctx.get('role')
+
+    def _as_object_id(x):
+        if isinstance(x, ObjectId):
+            return x
+        try:
+            return ObjectId(x)
+        except Exception:
+            return x  # deixa como está; se não for ObjectId válido, o match resultará vazio
+
+    if user_role == 'supervisor':
+        sup_id = user_ctx.get('id') or user_ctx.get('_id')
+        sup_id = _as_object_id(sup_id)
+        todos_vendedores = list(
+            vendedores_collection.find({"supervisor_id": sup_id}, {"_id": 1, "nome_vendedor": 1})
+        )
+    else:
+        todos_vendedores = list(
+            vendedores_collection.find({}, {"_id": 1, "nome_vendedor": 1})
+        )
+
     ids_para_buscar = [v['_id'] for v in todos_vendedores]
     vendedores_map = {str(v['_id']): v.get('nome_vendedor', 'Desconhecido') for v in todos_vendedores}
+
+    # Se a equipe do supervisor estiver vazia, já responde algo amigável
+    if user_role == 'supervisor' and not ids_para_buscar:
+        keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data="relatorio_geral")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        relatorio = (
+            f"📊 <b>Relatório da Minha Equipe (por Vendedor)</b>\n"
+            f"<b>Período:</b> {periodo.replace('_', ' ').capitalize()} "
+            f"({date_range['start'].strftime('%d/%m')} a {date_range['end'].strftime('%d/%m')})\n\n"
+            "Nenhum vendedor está associado a você no momento."
+        )
+        try:
+            await query.edit_message_text(relatorio, reply_markup=reply_markup, parse_mode='HTML')
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                await query.edit_message_text(relatorio + "\u2060", reply_markup=reply_markup, parse_mode='HTML')
+            else:
+                raise
+        return
 
     pipeline = [
         {"$match": {
@@ -164,8 +216,9 @@ async def gerar_relatorio_geral(update: Update, context: ContextTypes.DEFAULT_TY
     resultados = list(clientes_collection.aggregate(pipeline))
 
     periodo_str = periodo.replace('_', ' ').capitalize()
+    titulo = "Relatório da Minha Equipe (por Vendedor)" if user_role == 'supervisor' else "Relatório Geral por Vendedor"
     relatorio = (
-        f"📊 <b>Relatório Geral por Vendedor</b>\n"
+        f"📊 <b>{titulo}</b>\n"
         f"<b>Período:</b> {periodo_str} ({date_range['start'].strftime('%d/%m')} a {date_range['end'].strftime('%d/%m')})\n\n"
     )
 
